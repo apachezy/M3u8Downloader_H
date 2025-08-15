@@ -1,9 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
-using M3u8Downloader_H.Abstractions.Common;
+﻿using M3u8Downloader_H.Abstractions.Common;
 using M3u8Downloader_H.Abstractions.Downloader;
 using M3u8Downloader_H.Abstractions.M3u8;
 using M3u8Downloader_H.Abstractions.M3uDownloaders;
@@ -15,6 +10,13 @@ using M3u8Downloader_H.Common.Utils;
 using M3u8Downloader_H.Downloader;
 using M3u8Downloader_H.M3U8;
 using M3u8Downloader_H.Plugin.PluginManagers;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace M3u8Downloader_H.Core.Downloads
 {
@@ -72,6 +74,12 @@ namespace M3u8Downloader_H.Core.Downloads
             }
             Log.Info("获取视频流{0}个", M3U8FileInfo.MediaFiles.Count);
 
+            var ad = Ad_dk95_Block(M3U8FileInfo.MediaFiles);
+            if (ad > 0)
+            {
+                Log.Info("移除广告流{0}个", ad);
+            }
+            
             if (M3UKeyInfo is not null)
             {
                 M3UFileInfo m3UFileInfo = (M3UFileInfo)M3U8FileInfo;
@@ -81,6 +89,43 @@ namespace M3u8Downloader_H.Core.Downloads
             _isParsed = true;
         }
 
+        private int Ad_dk95_Block(IList<IM3uMediaInfo> list)
+        {
+            if (list.Count == 0) return 0;
+
+            Dictionary<string, int> dic = [];
+
+            foreach (var uri in list.Select(a => a.Uri).ToList())
+            {
+                var r = uri.OriginalString.Replace(uri.Segments[^1], "");
+
+                if (dic.TryGetValue(r, out int value))
+                    dic[r] = value + 1;
+                else
+                    dic.Add(r, 1);
+            }
+
+            if (dic.Count < 2) return 0;
+
+            var ads = dic.OrderBy(a => a.Value).Select(a => a.Key).ToList();
+            ads.RemoveAt(ads.Count - 1);
+
+            var c = 0;
+            foreach (var ad in ads)
+            {
+                Log.Info("广告路径:{0}", ad);
+
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    if (list[i].Uri.OriginalString.StartsWith(ad))
+                    {
+                        list.RemoveAt(i);
+                        c++;
+                    }
+                }
+            }
+            return c;
+        }
 
         private async ValueTask DownloadAsync(IDialogProgress downloadProgress, CancellationToken cancellationToken)
         {
